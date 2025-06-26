@@ -1,0 +1,3 @@
+{"instruction": "Quelle est la gamme de la bière Jonquille ?", "response": "La Jonquille appartient à la gamme clean et se présente toujours en canettes de 44cl."}
+{"instruction": "Combien de canettes comporte un carton ?", "response": "Un carton de canettes contient systématiquement 12 unités."}
+{"instruction": "Comment calculer le stock total ?", "response": "Additionnez les unités en stock et le nombre de cartons multiplié par 12 pour obtenir le stock total."}
