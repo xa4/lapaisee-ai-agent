@@ -68,7 +68,7 @@ class WooCommerceSyncer:
         }
         
         # Détection du type de bière
-        if any(term in name for term in ['ipa', 'lager', 'stout', 'pilsner', 'pale ale']):
+        if any(term in name for term in ['ipa', 'lager', 'stout', 'pilsner', 'pale ale', 'jonquille', 'pointe']):
             classification['gamme'] = 'clean'
             classification['container_type'] = 'canette'
         elif any(term in name for term in ['wild', 'spontané', 'mixte', 'lambic', 'gueuze']):
@@ -129,13 +129,17 @@ class WooCommerceSyncer:
             'price': product.get('price', '0'),
             'stock_quantity': product.get('stock_quantity', 0),
             'stock_status': product.get('stock_status', 'unknown'),
-            'categories': [cat['name'] for cat in product.get('categories', [])],
+            'categories': ', '.join([cat['name'] for cat in product.get('categories', [])]),
             'description': product.get('description', ''),
             'short_description': product.get('short_description', ''),
             **classification,
             'last_sync': datetime.now().isoformat()
         }
-        
+        # Nettoyer les valeurs None pour ChromaDB
+        for key in list(processed.keys()):
+            if processed[key] is None:
+                processed[key] = ''
+                
         return processed
     
     def sync_products(self):
@@ -163,7 +167,7 @@ class WooCommerceSyncer:
             Gamme: {processed['gamme']}
             Format: {processed['format']}
             Type de contenant: {processed['container_type']}
-            Prix: {processed['price']}€
+            Prix: {processed['price']} CHF
             Stock: {processed['stock_quantity']} unités
             Statut stock: {processed['stock_status']}
             Description: {processed['short_description']}
@@ -187,6 +191,17 @@ class WooCommerceSyncer:
         logger.info("Ajout du contexte de la brasserie...")
         
         contexts = [
+            {
+                'id': 'context_0',
+                'text': """
+                IMPORTANT - Produits spécifiques:
+                - JONQUILLE : Bière CLEAN, TOUJOURS en CANETTES 44cl
+                - Les cartons de Jonquille contiennent TOUJOURS 12 canettes (jamais 24!)
+                - Stock total Jonquille = canettes individuelles + (nombre de cartons × 12)
+                - Si tu vois "Carton Jonquille" ou "Carton de X Jonquilles", c'est TOUJOURS 12 canettes par carton
+                """,
+                'type': 'jonquille_info'
+            },
             {
                 'id': 'context_1',
                 'text': """
@@ -217,6 +232,18 @@ class WooCommerceSyncer:
                 - Les bières fortes et stouts sont populaires en hiver
                 """,
                 'type': 'seasonality'
+            },
+            {
+                'id': 'context_4',
+                'text': """
+                Informations spécifiques sur les produits:
+                - Jonquille: bière clean emblématique, toujours en canettes 44cl
+                - Pointe: autre bière clean populaire
+                - Les cartons de canettes contiennent toujours 12 unités
+                - Tous les prix sont en CHF (francs suisses)
+                - Pour calculer le stock total: unités + (nombre de cartons × 12)
+                """,
+                'type': 'product_info'
             }
         ]
         

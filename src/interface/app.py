@@ -96,15 +96,24 @@ def generate_context(products_results, context_results):
 
 def query_llm(question: str, context: str):
     """Interroge le LLM avec le contexte"""
-    prompt = f"""Tu es l'assistant AI de la brasserie L'Apaisée. Tu connais parfaitement les produits, 
+    prompt = f"""Tu es l'assistant AI de la brasserie L'Apaisée en Suisse. Tu connais parfaitement les produits, 
     les stocks et le fonctionnement de la brasserie.
 
-{context}
+    RÈGLES IMPORTANTES:
+    1. Tous les prix sont en CHF (francs suisses), JAMAIS en euros
+    2. Les bières clean (IPA, Jonquille, Pointe, etc.) sont TOUJOURS en canettes 44cl
+    3. Les bières wild sont en bouteilles
+    4. Les cartons de canettes contiennent 12 unités
+    5. Quand on demande le stock, calcule le total: unités + (cartons × 12)
 
-Question: {question}
+    {context}
 
-Réponds de manière précise et concise. Si tu parles de produits spécifiques, mentionne toujours 
-le stock disponible et le format."""
+    Question: {question}
+
+    Réponds de manière précise. Pour les stocks, donne toujours:
+    - Le nombre total de canettes/bouteilles disponibles
+    - Le détail (X unités + Y cartons)
+    - Utilise CHF pour les prix"""
     
     try:
         response = ollama.chat(
@@ -124,6 +133,10 @@ def main():
     
     # Initialiser les collections
     products_collection, context_collection = init_chromadb()
+    
+    # Initialiser l'historique des messages dans session_state
+    if "messages" not in st.session_state:
+        st.session_state.messages = []
     
     # Sidebar avec les stats
     with st.sidebar:
@@ -157,37 +170,29 @@ def main():
     with tab1:
         st.header("Posez vos questions sur votre brasserie")
         
-        # Zone de chat
-        if "messages" not in st.session_state:
-            st.session_state.messages = []
-        
         # Afficher l'historique
         for message in st.session_state.messages:
             with st.chat_message(message["role"]):
                 st.markdown(message["content"])
         
-        # Input utilisateur
-        if prompt := st.chat_input("Ex: Quel est le stock de Jonquille?"):
-            # Ajouter le message utilisateur
-            st.session_state.messages.append({"role": "user", "content": prompt})
-            with st.chat_message("user"):
-                st.markdown(prompt)
-            
-            # Rechercher dans les bases
+        # Zone pour la réponse du dernier message
+        if st.session_state.messages and st.session_state.messages[-1]["role"] == "user":
             with st.spinner("Recherche en cours..."):
-                products_results = search_products(products_collection, prompt)
-                context_results = search_products(context_collection, prompt, n_results=3)
+                # Rechercher dans les bases
+                question = st.session_state.messages[-1]["content"]
+                products_results = search_products(products_collection, question)
+                context_results = search_products(context_collection, question, n_results=3)
                 
                 # Générer le contexte
                 context = generate_context(products_results, context_results)
                 
                 # Interroger le LLM
-                response = query_llm(prompt, context)
-            
-            # Afficher la réponse
-            with st.chat_message("assistant"):
-                st.markdown(response)
-            st.session_state.messages.append({"role": "assistant", "content": response})
+                response = query_llm(question, context)
+                
+                # Afficher et stocker la réponse
+                with st.chat_message("assistant"):
+                    st.markdown(response)
+                st.session_state.messages.append({"role": "assistant", "content": response})
     
     with tab2:
         st.header("Recherche de produits")
@@ -213,7 +218,7 @@ def main():
                             st.caption(f"Statut: {metadata.get('stock_status', 'unknown')}")
                         
                         with col2:
-                            st.metric("Prix", f"{metadata.get('price', 'N/A')}€")
+                            st.metric("Prix", f"{metadata.get('price', 'N/A')} CHF")
                             st.caption(f"Format: {metadata.get('format', 'Non spécifié')}")
                         
                         with col3:
@@ -279,6 +284,12 @@ def main():
                         )
                     )
                     st.success(response)
+    
+    # Chat input EN DEHORS des tabs
+    if prompt := st.chat_input("Ex: Quel est le stock de Jonquille?"):
+        # Ajouter le message utilisateur
+        st.session_state.messages.append({"role": "user", "content": prompt})
+        st.rerun()
 
 if __name__ == "__main__":
     main()
