@@ -13,6 +13,8 @@ import chromadb
 from chromadb.utils import embedding_functions
 from loguru import logger
 import re
+import warnings
+warnings.filterwarnings('ignore', message='urllib3 v2 only supports OpenSSL')
 
 # Charger les variables d'environnement
 load_dotenv()
@@ -266,6 +268,11 @@ class WooCommerceSyncer:
                 'text': """
                 Informations spécifiques sur les produits:
                 - Jonquille: bière clean emblématique, toujours en canettes 44cl
+                - Pointe: bière IPA blanche aux zestes d'agrumes, toujours en canettes 44cl
+                - Insolente: double IPA west coast, ambrée, toujours en canettes 44cl
+                - Get Oat and Play: New England IPA, avec avoine Suisse, toujours en canettes 44cl
+                - Boucane: IPA fumée, toujours en canettes 44cl
+                - Maousse: il y a plusieurs produits Maousse différents,
                 - Pointe: autre bière clean populaire
                 - Les cartons de canettes contiennent toujours 12 unités
                 - Tous les prix sont en CHF (francs suisses)
