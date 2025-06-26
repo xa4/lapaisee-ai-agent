@@ -11,6 +11,7 @@ from chromadb.utils import embedding_functions
 import ollama
 from datetime import datetime
 import json
+from woocommerce import API
 from loguru import logger
 
 # Configuration de la page
@@ -127,6 +128,49 @@ def query_llm(question: str, context: str):
         logger.error(f"Erreur LLM: {e}")
         return f"Erreur lors de la génération de la réponse: {str(e)}"
 
+
+@st.cache_data(ttl=300)  # Cache de 5 minutes
+def get_recent_orders(n_orders=10):
+    """Récupère les dernières commandes depuis WooCommerce"""
+    try:
+        wcapi = API(
+            url=os.getenv("WOOCOMMERCE_URL"),
+            consumer_key=os.getenv("WOOCOMMERCE_KEY"),
+            consumer_secret=os.getenv("WOOCOMMERCE_SECRET"),
+            version="wc/v3",
+            timeout=30
+        )
+        
+        # Récupérer les dernières commandes
+        response = wcapi.get("orders", params={
+            "per_page": n_orders,
+            "orderby": "date",
+            "order": "desc"
+        })
+        
+        if response.status_code == 200:
+            return response.json()
+        else:
+            st.error(f"Erreur API: {response.status_code}")
+            return []
+    except Exception as e:
+        st.error(f"Erreur lors de la récupération des commandes: {e}")
+        return []
+
+def format_order_status(status):
+    """Formate le statut de commande avec emoji"""
+    status_map = {
+        'pending': ('⏳', 'En attente'),
+        'processing': ('🔄', 'En traitement'),
+        'on-hold': ('⏸️', 'En pause'),
+        'completed': ('✅', 'Terminée'),
+        'cancelled': ('❌', 'Annulée'),
+        'refunded': ('💸', 'Remboursée'),
+        'failed': ('⚠️', 'Échouée')
+    }
+    emoji, label = status_map.get(status, ('❓', status))
+    return f"{emoji} {label}"
+
 def main():
     st.title("🍺 L'Apaisée AI Agent")
     st.markdown("Assistant intelligent pour la gestion de votre brasserie")
@@ -165,7 +209,7 @@ def main():
                 st.warning("Aucun log disponible")
     
     # Tabs principales
-    tab1, tab2, tab3 = st.tabs(["💬 Assistant", "📦 Produits", "📈 Analyses"])
+    tab1, tab2, tab3, tab4 = st.tabs(["💬 Assistant", "📦 Produits", "📈 Analyses", "📋 Commandes"])
     
     with tab1:
         st.header("Posez vos questions sur votre brasserie")
@@ -227,7 +271,11 @@ def main():
                         
                         if metadata.get('short_description'):
                             st.markdown("**Description:**")
-                            st.markdown(metadata['short_description'])
+                            # Afficher la description nettoyée
+                            desc = metadata['short_description']
+                            if desc and len(desc) > 200:
+                                desc = desc[:200] + "..."
+                            st.write(desc)
             else:
                 st.info("Aucun résultat trouvé")
     
@@ -284,6 +332,84 @@ def main():
                         )
                     )
                     st.success(response)
+    
+    with tab4:
+        st.header("Dernières commandes")
+        
+        # Sélecteur du nombre de commandes
+        col1, col2 = st.columns([3, 1])
+        with col2:
+            n_orders = st.number_input("Nombre", min_value=5, max_value=50, value=10)
+        
+        # Bouton de rafraîchissement
+        with col1:
+            if st.button("🔄 Rafraîchir les commandes"):
+                st.cache_data.clear()
+                st.rerun()
+        
+        # Récupérer les commandes
+        with st.spinner("Chargement des commandes..."):
+            orders = get_recent_orders(n_orders)
+        
+        if orders:
+            st.subheader(f"{len(orders)} dernières commandes")
+            
+            for order in orders:
+                # Créer un titre avec les infos principales
+                order_date = order['date_created'].split('T')[0]
+                order_total = order['total']
+                order_status = format_order_status(order['status'])
+                
+                # Nom du client
+                customer_name = f"{order['billing']['first_name']} {order['billing']['last_name']}"
+                
+                with st.expander(f"#{order['number']} - {customer_name} - {order_date} - {order_total} CHF - {order_status}"):
+                    # Détails du client
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        st.markdown("**👤 Client**")
+                        st.write(f"Nom: {customer_name}")
+                        st.write(f"Email: {order['billing']['email']}")
+                        st.write(f"Tél: {order['billing']['phone']}")
+                    
+                    with col2:
+                        st.markdown("**📍 Livraison**")
+                        if order.get('shipping_lines'):
+                            shipping = order['shipping_lines'][0]['method_title']
+                            st.write(f"Mode: {shipping}")
+                        st.write(f"Adresse: {order['shipping']['address_1']}")
+                        st.write(f"{order['shipping']['postcode']} {order['shipping']['city']}")
+                    
+                    # Produits commandés
+                    st.markdown("**🍺 Produits commandés**")
+                    total_items = 0
+                    for item in order['line_items']:
+                        qty = item['quantity']
+                        total_items += qty
+                        st.write(f"- {qty}x {item['name']} ({item['total']} CHF)")
+                    
+                    st.write(f"**Total articles: {total_items}**")
+                    
+                    # Paiement et notes
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        st.markdown("**💳 Paiement**")
+                        st.write(f"Méthode: {order['payment_method_title']}")
+                        st.write(f"Total: {order['total']} CHF")
+                        if order.get('transaction_id'):
+                            st.write(f"Transaction: {order['transaction_id']}")
+                    
+                    with col2:
+                        st.markdown("**📝 Notes**")
+                        if order.get('customer_note'):
+                            st.write(f"Note client: {order['customer_note']}")
+                        st.write(f"Créée le: {order_date}")
+                        if order.get('date_completed'):
+                            st.write(f"Complétée le: {order['date_completed'].split('T')[0]}")
+        else:
+            st.info("Aucune commande trouvée")
     
     # Chat input EN DEHORS des tabs
     if prompt := st.chat_input("Ex: Quel est le stock de Jonquille?"):

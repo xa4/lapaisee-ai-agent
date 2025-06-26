@@ -12,6 +12,7 @@ from woocommerce import API
 import chromadb
 from chromadb.utils import embedding_functions
 from loguru import logger
+import re
 
 # Charger les variables d'environnement
 load_dotenv()
@@ -52,6 +53,23 @@ class WooCommerceSyncer:
             embedding_function=self.embedding_function
         )
     
+    
+    def clean_html(self, text: str) -> str:
+        """Nettoie le HTML d'un texte"""
+        if not text:
+            return ""
+        
+        # Remplacer les <br> par des espaces
+        text = re.sub(r'<br\s*/?>', ' ', text)
+        
+        # Supprimer toutes les balises HTML
+        text = re.sub(r'<[^>]+>', '', text)
+        
+        # Nettoyer les espaces multiples
+        text = ' '.join(text.split())
+        
+        return text.strip()
+
     def classify_product(self, product: Dict[str, Any]) -> Dict[str, Any]:
         """
         Classifie un produit selon les règles de L'Apaisée
@@ -75,13 +93,22 @@ class WooCommerceSyncer:
             classification['gamme'] = 'wild'
             classification['container_type'] = 'bouteille'
         
-        # Détection du format
+        # Détection du format - AMÉLIORATION pour 12x et 24x
         if 'fût' in name or 'fut' in name or 'keg' in name:
             classification['format'] = 'fût 20L'
             classification['container_type'] = 'fût'
-        elif '12x' in name or 'carton 12' in name:
+        # IMPORTANT: Détecter 12x AVANT les autres formats
+        elif '12x' in name.lower() or '12 x' in name.lower():
             classification['format'] = 'carton 12 canettes 44cl'
-        elif '24x' in name or 'carton 24' in name:
+            classification['container_type'] = 'carton'
+            classification['gamme'] = 'clean'  # Les 12x sont toujours des canettes donc clean
+        # Détecter 24x
+        elif '24x' in name.lower() or '24 x' in name.lower() or 'carton de 24' in name.lower():
+            classification['format'] = 'carton 24 bouteilles 33cl'
+            classification['container_type'] = 'carton'
+        elif '12x' in name.lower() or '12 x' in name.lower() or 'carton 12' in name.lower():
+            classification['format'] = 'carton 12 canettes 44cl'
+        elif '24x' in name.lower() or '24 x' in name.lower() or 'carton 24' in name.lower() or 'carton de 24' in name.lower():
             classification['format'] = 'carton 24 bouteilles 33cl'
         elif '6x' in name or 'carton 6' in name:
             classification['format'] = 'carton 6 bouteilles 75cl'
@@ -101,7 +128,8 @@ class WooCommerceSyncer:
         
         while True:
             logger.info(f"Récupération page {page}...")
-            response = self.wcapi.get("products", params={"per_page": 100, "page": page})
+            logger.info(f"  Params: per_page=100, page={page}")
+            response = self.wcapi.get("products", params={"per_page": 100, "page": page, "status": "any"})
             
             if response.status_code != 200:
                 logger.error(f"Erreur API: {response.status_code}")
