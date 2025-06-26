@@ -91,6 +91,16 @@ streamlit run src/interface/app.py
 python src/sync_woocommerce.py
 ```
 
+### Préparer un jeu d'exemples pour le fine-tuning
+
+Un script utilitaire `scripts/setup_transformers_training.py` ajoute la dépendance
+`transformers` et crée un fichier `data/finetune_samples.jsonl` contenant quelques
+paires instruction/réponse.
+
+```bash
+python scripts/setup_transformers_training.py
+```
+
 ## 📱 Roadmap
 
 ### Phase 1 : Base ✅
